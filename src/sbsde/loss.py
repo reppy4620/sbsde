@@ -15,10 +15,12 @@ def compute_div_gz_f(sde, net_b, ts, xs):
     return div_gz_f, zs
 
 
-def compute_loss(sde, net_b, ts, xs, xs_term, zs_f):
+def compute_loss(sde, net_b, ts, xs, x_term, zs_f):
     div_gz_f, zs_b = compute_div_gz_f(sde, net_b, ts, xs)
 
-    loss = 0.5 * (zs_f + zs_b) ** 2 + div_gz_f
-    loss = (loss * sde.dt).sum() / xs.shape[0]
-    loss = loss - sde.p_prior.log_prob(xs_term).mean()
+    integrand = 0.5 * (zs_f + zs_b) ** 2 + div_gz_f
+    E_integrand = integrand.reshape(
+        x_term.shape[0], sde.interval, x_term.shape[-1]
+    ).mean(dim=0)
+    loss = -sde.p_prior.log_prob(x_term).mean() + (E_integrand * sde.dt).sum()
     return loss
