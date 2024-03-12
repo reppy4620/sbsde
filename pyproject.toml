@@ -10,6 +10,7 @@ dependencies = [
     "torchvision>=0.17.1",
     "matplotlib>=3.8.3",
     "tqdm>=4.66.2",
+    "pot>=0.9.3",
 ]
 readme = "README.md"
 requires-python = ">= 3.8"

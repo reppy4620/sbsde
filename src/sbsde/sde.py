@@ -67,3 +67,33 @@ class VESDE(SDE):
             * (self.sigma_max / self.sigma_min) ** t
             * np.sqrt(2 * np.log(self.sigma_max / self.sigma_min))
         )
+
+
+class VPSDE(SDE):
+    def __init__(
+        self,
+        p_data,
+        p_prior,
+        device,
+        beta_min=0.1,
+        beta_max=20,
+        t0=1e-3,
+        T=1,
+        interval=100,
+    ):
+        super().__init__(p_data, p_prior, device, t0, T, interval)
+        self.beta_min = beta_min
+        self.beta_max = beta_max
+
+    def beta_t(self, t):
+        return self.beta_min + (self.beta_max - self.beta_min) * t
+
+    def f(self, t, x):
+        t = t.squeeze()
+        if t.dim() == 0:
+            t = t.repeat(x.shape[0])
+        beta_t = self.beta_t(t)[:, None]
+        return -0.5 * beta_t * x
+
+    def g(self, t):
+        return torch.sqrt(self.beta_t(t))
