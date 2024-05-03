@@ -70,12 +70,6 @@ class ToyModel(torch.nn.Module):
         )
 
     def forward(self, t, x):
-        """
-        Apply the model to an input batch.
-        :param x: an [N x C x ...] Tensor of inputs.
-        :param timesteps: a 1-D batch of timesteps.
-        """
-
         t = t.squeeze()
         if t.dim() == 0:
             t = t.repeat(x.shape[0])

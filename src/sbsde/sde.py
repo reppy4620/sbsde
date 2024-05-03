@@ -34,6 +34,19 @@ class SDE:
         ) * torch.randn_like(x)
         return x + sign * dx_t
 
+    def propagate_s_u(self, t, x, u, s=None, direction=Direction.FORWARD):
+        sign = 1 if direction == Direction.FORWARD else -1
+        if direction == Direction.FORWARD:
+            dx_t = (self.f(t, x) + self.g(t) * u) * self.dt + self.g(t) * np.sqrt(
+                self.dt
+            ) * torch.randn_like(x)
+        else:
+            assert s is not None, "s must be provided for backward propagation"
+            dx_t = (self.f(t, x) + self.g(t) * u - s) * self.dt + self.g(t) * np.sqrt(
+                self.dt
+            ) * torch.randn_like(x)
+        return x + sign * dx_t
+
     def sample_traj(self, net, direction=Direction.FORWARD):
         init_dist = self.p_data if direction == Direction.FORWARD else self.p_prior
 

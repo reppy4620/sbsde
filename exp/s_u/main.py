@@ -6,13 +6,14 @@ import ot
 import torch
 import torch.optim as optim
 from sbsde.distribution import MixMultiVariateNormal, PriorNormal
-from sbsde.loss import compute_loss
+from sbsde.loss import compute_loss_s_u as compute_loss
 from sbsde.model import ToyModel
 from sbsde.sde import VESDE, Direction
 from sbsde.utils import flatten_dim01
 from tqdm.auto import trange
 
 batch_size = 1000
+prior_sigma = 1.0
 sigma_min = 1e-2
 sigma_max = 5
 num_iter = 1000
@@ -28,35 +29,37 @@ def main(interval):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     p_data = MixMultiVariateNormal(batch_size)
-    p_prior = PriorNormal(sigma_max, device)
+    p_prior = PriorNormal(prior_sigma, device)
     sde = VESDE(p_data, p_prior, device, sigma_min, sigma_max, interval=interval)
-    net_f = ToyModel().to(device)
-    net_b = ToyModel().to(device)
+    net_s = ToyModel().to(device)
+    net_u = ToyModel().to(device)
 
-    optimizer_f = optim.AdamW(net_f.parameters(), lr=1e-4)
-    optimizer_b = optim.AdamW(net_b.parameters(), lr=1e-4)
+    optimizer_s = optim.AdamW(net_s.parameters(), lr=1e-4)
+    optimizer_u = optim.AdamW(net_u.parameters(), lr=1e-4)
 
     if (out_dir / "ckpt.pth").exists() and not retrain:
         print("Load pretrained checkpoint")
-        net_f.load_state_dict(torch.load(out_dir / "ckpt.pth")["net_f"])
-        net_b.load_state_dict(torch.load(out_dir / "ckpt.pth")["net_b"])
+        net_s.load_state_dict(torch.load(out_dir / "ckpt.pth")["net_f"])
+        net_u.load_state_dict(torch.load(out_dir / "ckpt.pth")["net_b"])
 
     if retrain:
-        net_f.train()
-        net_b.train()
+        net_s.train()
+        net_u.train()
         losses = []
         bar = trange(num_iter)
         for it in bar:
-            optimizer_f.zero_grad()
-            optimizer_b.zero_grad()
-            xs_f, zs_f, x_term_f = sde.sample_traj(net_f)
+            optimizer_s.zero_grad()
+            optimizer_u.zero_grad()
+            xs, us, x_term_f = sde.sample_traj(net_u)
             _ts = sde.ts.repeat(batch_size)
-            xs_f = flatten_dim01(xs_f)
-            zs_f = flatten_dim01(zs_f)
-            loss = compute_loss(sde, net_b, _ts, xs_f, x_term_f, zs_f)
+            xs = flatten_dim01(xs)
+            us = flatten_dim01(us)
+            loss = compute_loss(
+                sde=sde, net_s=net_s, ts=_ts, xs=xs, x_term=x_term_f, us=us
+            )
             loss.backward()
-            optimizer_f.step()
-            optimizer_b.step()
+            optimizer_s.step()
+            optimizer_u.step()
             bar.set_postfix(loss=loss.item())
             losses.append(loss.item())
 
@@ -68,10 +71,10 @@ def main(interval):
 
         torch.save(
             {
-                "net_f": net_f.state_dict(),
-                "net_b": net_b.state_dict(),
-                "optimizer_f": optimizer_f.state_dict(),
-                "optimizer_b": optimizer_b.state_dict(),
+                "net_s": net_s.state_dict(),
+                "net_u": net_u.state_dict(),
+                "optimizer_s": optimizer_s.state_dict(),
+                "optimizer_u": optimizer_u.state_dict(),
             },
             out_dir / f"ckpt_{interval}.pth",
         )
@@ -81,15 +84,16 @@ def main(interval):
     x = x_data
     for t in sde.ts:
         with torch.no_grad():
-            z = net_f(t, x)
-            x = sde.propagate(t, x, z, Direction.FORWARD)
+            u = net_u(t, x)
+            x = sde.propagate_s_u(t, x, u, direction=Direction.FORWARD)
     x_T = x.detach().cpu().numpy()
     x_prior = sde.p_prior.sample_n(n)
     x = x_prior
     for t in reversed(sde.ts):
         with torch.no_grad():
-            z = net_b(t, x)
-            x = sde.propagate(t, x, z, Direction.BACKWARD)
+            u = net_u(t, x)
+            s = net_s(t, x)
+            x = sde.propagate_s_u(t, x, u, s, direction=Direction.BACKWARD)
     x_0 = x.detach().cpu().numpy()
 
     x_data = x_data.detach().cpu().numpy()
@@ -126,5 +130,5 @@ def main(interval):
         f.write(f"{emd_forward},{emd_backward}\n")
 
 
-for interval in [10, 20, 50, 100]:
+for interval in [10, 20, 50, 100, 200, 500, 1000]:
     main(interval)

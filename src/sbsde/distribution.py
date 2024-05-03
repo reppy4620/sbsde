@@ -5,7 +5,6 @@ import torch.distributions as td
 
 class MixMultiVariateNormal:
     def __init__(self, batch_size, radius=12, num=8, sigmas=None):
-        # build mu's and sigma's
         arc = 2 * np.pi / num
         xs = [np.cos(arc * idx) * radius for idx in range(num)]
         ys = [np.sin(arc * idx) * radius for idx in range(num)]
