@@ -35,15 +35,31 @@ def compute_div(hs, xs):
 
 def compute_loss_s_u(sde, net_s, ts, xs, x_term, us):
     g = sde.g(ts)[:, None]
-    g_sq = g**2
     s = net_s(ts, xs)
     u = us
     f = sde.f(ts, xs)
 
-    div_term = compute_div((g_sq * s) * (g * u) * f, xs)
-    integrand = (g_sq / 2) * (s**2) + div_term
+    norm_term = 0.5 * s**2
+    div_term = compute_div(g * s - g * u - f, xs)
+
+    integrand = norm_term + div_term
     E_integrand = integrand.reshape(
         x_term.shape[0], sde.interval, x_term.shape[-1]
     ).mean(dim=0)
     loss = -sde.p_prior.log_prob(x_term).mean() + (E_integrand * sde.dt).sum()
+    return loss
+
+
+def compute_loss_score(sde, net, ts, xs, x_term):
+    g = sde.g(ts)[:, None]
+    s = net(ts, xs)
+
+    norm_term = 0.5 * (g * s) ** 2
+    div_term = compute_div(g**2 * s, xs)
+
+    integrand = norm_term + div_term
+    E_integrand = integrand.reshape(
+        x_term.shape[0], sde.interval, x_term.shape[-1]
+    ).mean(dim=0)
+    loss = (E_integrand * sde.dt).sum()
     return loss

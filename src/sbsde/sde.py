@@ -1,3 +1,4 @@
+import math
 from enum import Enum
 
 import numpy as np
@@ -27,24 +28,27 @@ class SDE:
     def g(self, t):
         pass
 
+    def marginal_prob(self, t, x_0):
+        pass
+
     def propagate(self, t, x, z, direction=Direction.FORWARD):
         sign = 1 if direction == Direction.FORWARD else -1
-        dx_t = (self.f(t, x) + sign * self.g(t) * z) * self.dt + self.g(t) * np.sqrt(
-            self.dt
-        ) * torch.randn_like(x)
+        drift = (self.f(t, x) + sign * self.g(t) * z) * self.dt
+        diffusion = self.g(t) * torch.randn_like(x) * np.sqrt(self.dt)
+        dx_t = drift + diffusion
         return x + sign * dx_t
 
     def propagate_s_u(self, t, x, u, s=None, direction=Direction.FORWARD):
         sign = 1 if direction == Direction.FORWARD else -1
         if direction == Direction.FORWARD:
-            dx_t = (self.f(t, x) + self.g(t) * u) * self.dt + self.g(t) * np.sqrt(
-                self.dt
-            ) * torch.randn_like(x)
+            drift = (self.f(t, x) + self.g(t) * u) * self.dt
+            diffusion = self.g(t) * torch.randn_like(x) * np.sqrt(self.dt)
+            dx_t = drift + diffusion
         else:
             assert s is not None, "s must be provided for backward propagation"
-            dx_t = (self.f(t, x) + self.g(t) * u - s) * self.dt + self.g(t) * np.sqrt(
-                self.dt
-            ) * torch.randn_like(x)
+            drift = (self.f(t, x) + self.g(t) * u - self.g(t) ** 2 * s) * self.dt
+            diffusion = self.g(t) * torch.randn_like(x) * np.sqrt(self.dt)
+            dx_t = drift + diffusion
         return x + sign * dx_t
 
     def sample_traj(self, net, direction=Direction.FORWARD):
@@ -62,10 +66,41 @@ class SDE:
         x_term = x
         return xs, zs, x_term
 
+    def sample_marginal(self, n, device):
+        indices = (
+            (torch.rand(n) * self.interval).round().long().clamp_max(self.interval - 1)
+        )
+        t = self.ts[indices]
+        x_0 = self.p_data.sample(n).to(device)
+        mean, std = self.marginal_prob(t, x_0)
+        z = torch.randn_like(x_0)
+        x_t = mean + std[:, None] * z
+        return t, x_t, mean, std, z
+
+
+class SimpleSDE(SDE):
+    def __init__(self, p_data, p_prior, device, eps=1.0, t0=1e-3, T=1, interval=100):
+        super().__init__(p_data, p_prior, device, t0, T, interval)
+        self.eps = eps
+
+    def f(self, t, x):
+        return torch.zeros_like(x)
+
+    def g(self, t):
+        return self.eps
+
 
 class VESDE(SDE):
     def __init__(
-        self, p_data, p_prior, device, sigma_min, sigma_max, t0=1e-3, T=1, interval=100
+        self,
+        p_data,
+        p_prior,
+        device,
+        sigma_min=1e-2,
+        sigma_max=5.0,
+        t0=1e-3,
+        T=1,
+        interval=100,
     ):
         super().__init__(p_data, p_prior, device, t0, T, interval)
         self.sigma_min = sigma_min
@@ -80,6 +115,11 @@ class VESDE(SDE):
             * (self.sigma_max / self.sigma_min) ** t
             * np.sqrt(2 * np.log(self.sigma_max / self.sigma_min))
         )
+
+    def marginal_prob(self, t, x_0):
+        mean = x_0
+        std = self.sigma_min**2 * (self.sigma_max / self.sigma_min) ** (2 * t)
+        return mean, std
 
 
 class VPSDE(SDE):
@@ -110,3 +150,9 @@ class VPSDE(SDE):
 
     def g(self, t):
         return torch.sqrt(self.beta_t(t))
+
+    def marginal_prob(self, t, x):
+        beta_int = self.beta_min * t + 0.5 * (self.beta_max - self.beta_min) * t**2
+        mean = torch.exp(-0.5 * beta_int)[:, None] * x
+        std = torch.sqrt(1.0 - torch.exp(-beta_int))
+        return mean, std

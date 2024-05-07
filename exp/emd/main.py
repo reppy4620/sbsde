@@ -12,18 +12,18 @@ from sbsde.sde import VESDE, Direction
 from sbsde.utils import flatten_dim01
 from tqdm.auto import trange
 
-batch_size = 1000
+batch_size = 200
 prior_sigma = 1.0
 sigma_min = 1e-2
 sigma_max = 5
-num_iter = 1000
+num_iter = 3000
 sample_size = 1000
 retrain = True
 
 
 def main(interval):
     print("interval =", interval)
-    out_dir = Path("out")
+    out_dir = Path(f"out/interval_{interval}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -127,5 +127,5 @@ def main(interval):
         f.write(f"{emd_forward},{emd_backward}\n")
 
 
-for interval in [10, 20, 50, 100, 200, 500, 1000]:
+for interval in reversed([10, 20, 50, 100, 200, 500, 1000]):
     main(interval)
