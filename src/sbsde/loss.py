@@ -63,3 +63,22 @@ def compute_loss_score(sde, net, ts, xs, x_term):
     ).mean(dim=0)
     loss = (E_integrand * sde.dt).sum()
     return loss
+
+
+def compute_loss_s_u_2(sde, net_u2, net_s, ts, xs, x_term, us):
+    g = sde.g(ts)[:, None]
+    g_sq = g**2
+    u2 = net_u2(ts, xs)
+    s = net_s(ts, xs)
+    u = us
+    f = sde.f(ts, xs)
+
+    norm_term = 0.5 * g_sq * (u - u2 + s) ** 2
+    div_term = compute_div(g_sq * s - g_sq * u2 - f, xs)
+
+    integrand = norm_term + div_term
+    E_integrand = integrand.reshape(
+        x_term.shape[0], sde.interval, x_term.shape[-1]
+    ).mean(dim=0)
+    loss = -sde.p_prior.log_prob(x_term).mean() + (E_integrand * sde.dt).sum()
+    return loss

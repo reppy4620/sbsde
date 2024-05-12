@@ -24,7 +24,7 @@ managed = true
 dev-dependencies = [
     "mypy>=1.8.0",
     "ruff>=0.3.0",
-    "jupyterlab>=4.1.3",
+    "jupyterlab>=4.2.0",
 ]
 
 [tool.hatch.metadata]

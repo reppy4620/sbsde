@@ -51,7 +51,20 @@ class SDE:
             dx_t = drift + diffusion
         return x + sign * dx_t
 
-    def sample_traj(self, net, direction=Direction.FORWARD):
+    def propagate_s_u_2(self, t, x, u, u2=None, s=None, direction=Direction.FORWARD):
+        sign = 1 if direction == Direction.FORWARD else -1
+        if direction == Direction.FORWARD:
+            drift = (self.f(t, x) + self.g(t) ** 2 * u) * self.dt
+            diffusion = self.g(t) * torch.randn_like(x) * np.sqrt(self.dt)
+            dx_t = drift + diffusion
+        else:
+            assert s is not None, "s must be provided for backward propagation"
+            drift = (self.f(t, x) + self.g(t) ** 2 * u2 - self.g(t) ** 2 * s) * self.dt
+            diffusion = self.g(t) * torch.randn_like(x) * np.sqrt(self.dt)
+            dx_t = drift + diffusion
+        return x + sign * dx_t
+
+    def sample_traj(self, net, direction=Direction.FORWARD, mode="normal"):
         init_dist = self.p_data if direction == Direction.FORWARD else self.p_prior
 
         x = init_dist.sample().to(self.device)
@@ -60,7 +73,10 @@ class SDE:
 
         for i, t in enumerate(self.ts):
             z = net(t, x)
-            x = self.propagate(t, x, z, direction=direction)
+            if mode == "normal":
+                x = self.propagate(t, x, z, direction=direction)
+            else:
+                x = self.propagate_s_u_2(t, x, z, direction=direction)
             xs[:, i] = x
             zs[:, i] = z
         x_term = x
@@ -87,7 +103,7 @@ class SimpleSDE(SDE):
         return torch.zeros_like(x)
 
     def g(self, t):
-        return self.eps
+        return torch.full_like(t, fill_value=self.eps)
 
 
 class VESDE(SDE):
