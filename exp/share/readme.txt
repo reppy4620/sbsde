@@ -4,3 +4,6 @@
 4. joint optimization
 5. phi -> theta optimization
 6. change stochastic process
+7. joint optimization fixed
+8. 2 stage optimization fixed
+9. gradient clipping
